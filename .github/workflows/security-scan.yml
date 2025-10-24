@@ -1,0 +1,64 @@
+name: Security Scan - Vuln Server
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security-analysis:
+    name: Run Security Scans (Semgrep + Trivy)
+    runs-on: ubuntu-latest
+
+    steps:
+      # Étape 1 : Récupération du code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Étape 2 : Configuration de Node.js (pour analyser server.js, package.json, etc.)
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # Étape 3 : Installation des dépendances (si besoin)
+      - name: Install dependencies
+        run: |
+          if [ -f "package.json" ]; then
+            npm ci
+          fi
+
+      # Étape 4 : Analyse statique du code avec Semgrep
+      - name: Run Semgrep (SAST)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: auto
+
+      # Étape 5 : Analyse de vulnérabilités de dépendances / conteneur avec Trivy
+      - name: Run Trivy (Dependency & Container Scan)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      # Étape 6 : Upload des résultats dans l’onglet “Security” GitHub
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      # Étape 7 : Audit des modules Node.js
+      - name: Run npm audit
+        run: |
+          if [ -f "package.json" ]; then
+            npm audit --audit-level=moderate || true
+          fi
+
+      # Étape 8 : Vérification Dockerfile & docker-compose
+      - name: Lint Docker configuration
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
